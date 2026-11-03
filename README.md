@@ -102,13 +102,42 @@ The runner writes JSON and Markdown reports under `backend/report/` (ignored by 
 
 ### Repository checks
 
-| Check | Latest local result |
-|---|---|
-| Backend tests | 18 passed with `python -m pytest -q` |
-| Frontend production build | Passed with `npm run build` |
-| Model quality / throughput | Not run; requires model downloads and a benchmark run |
+The following checks were run locally on **2026-11-03**, at commit `3cc68b7`:
 
-GitHub Actions runs the backend tests and frontend production build on pushes and pull requests.
+| Check | Result |
+|---|---|
+| Backend test suite (`python -m pytest -q`) | **Passed: 18 tests** |
+| Frontend install and production build (`npm ci`, `npm run build`) | **Passed** (Vite 6.4.3) |
+| Built-in model benchmark (`python backend/run_benchmark.py`) | **Completed on CPU**; smoke-test results below |
+| Docker/Compose image build | **Not verified**; Docker was unavailable in the evaluation environment |
+| Git working tree | Clean at the start of evaluation; branch `main` tracks `origin/main` |
+
+#### Built-in benchmark results
+
+| Metric | Result | Interpretation |
+|---|---:|---|
+| Benign image samples | 56 | Synthetic samples; both baseline and Guardian flagged 0 (0% false-positive rate) |
+| Mean image risk change | -5.1% | Guardian's mean risk was slightly higher than the baseline on these samples |
+| Text set | 20 samples | Accuracy 95.0%, precision 90.9%, recall 100%, F1 95.2%; 1 false positive and 0 false negatives |
+| Context checks | 32 pairs | 100% (32/32) on generated fixtures |
+| Image throughput | 10 images | 0.087 seconds/image, about 690 images/minute on CPU in this run |
+
+These figures are **not production accuracy or performance claims**. The image/context samples are synthetic, the text set is tiny and hand-curated, and this run did not record a machine specification or measure model warm-up, concurrency, or end-to-end API latency. The 0% image false-positive result is not informative because neither system flagged any synthetic image. The context result is a fixture pass rate, not evidence of general disambiguation ability. Reports are generated under the Git-ignored `backend/report/` directory and are not committed. Benchmark data and machine differences can change results.
+
+#### Code review findings
+
+This was a source/configuration review, not a penetration test. Address these items before exposing the service to untrusted users:
+
+- **High — model failures can look like safe decisions.** Image and text services fall back to permissive placeholder responses when model loading fails. Surface model readiness and fail closed or return an explicit unavailable error.
+- **High — logs expose submitted content without authentication.** `GET /logs` returns in-memory request records, including submitted text and image metadata. Protect or remove this endpoint and minimize retained content before deployment.
+- **High — uploads have no enforced size limits.** Image/video uploads can consume unbounded memory or disk; validate actual content and size before processing.
+- **Medium — permissive cross-origin policy.** CORS allows every origin. Restrict it to the deployed frontend origins.
+- **Medium — in-memory jobs and logs are unbounded and ephemeral.** Video jobs and logs disappear on restart and have no retention/queue limits.
+- **Medium — health status does not establish model readiness.** A healthy response can be misleading if a model did not load; distinguish process health from inference readiness.
+- **Evaluation gap — thresholds/prompts lack representative validation.** Establish a consented, labeled test set, document model versions, measure class-specific errors, and calibrate thresholds before using moderation outcomes operationally.
+
+GitHub Actions is configured to run the backend tests and frontend production build on pushes and pull requests. This confirms the workflow is present; no remote Actions run was checked during this evaluation.
+
 
 ## Development checks
 
